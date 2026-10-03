@@ -17,18 +17,15 @@ jobs:
     timeout-minutes: 30
 
     steps:
-      # دریافت فایل‌های Repository
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # نصب Java موردنیاز Android Gradle Plugin
       - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
 
-      # پیدا کردن sdkmanager با مسیر کامل و نصب ابزارهای لازم
       - name: Configure Android SDK
         shell: bash
         run: |
@@ -39,7 +36,7 @@ jobs:
 
           SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
 
-          if [ ! -x "$SDKMANAGER" ]; then
+          if [ ! -f "$SDKMANAGER" ]; then
             echo "sdkmanager was not found in the default location."
             echo "Searching inside Android SDK..."
 
@@ -54,7 +51,6 @@ jobs:
           if [ -z "$SDKMANAGER" ] || [ ! -f "$SDKMANAGER" ]; then
             echo "ERROR: sdkmanager could not be found."
 
-            echo "Available sdkmanager files:"
             find "$ANDROID_HOME" \
               -maxdepth 6 \
               -type f \
@@ -64,8 +60,6 @@ jobs:
 
             exit 1
           fi
-
-          chmod +x "$SDKMANAGER"
 
           echo "Using sdkmanager:"
           echo "$SDKMANAGER"
@@ -77,21 +71,19 @@ jobs:
           yes | "$SDKMANAGER" --licenses > /dev/null || true
 
           echo "Installing required Android SDK packages..."
+
           "$SDKMANAGER" \
             "platform-tools" \
             "platforms;android-35" \
             "build-tools;35.0.0"
 
-          echo "Installed Android SDK packages:"
-          "$SDKMANAGER" --list_installed
+          echo "Android SDK configuration completed."
 
-      # نصب Gradle
       - name: Set up Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
 
-      # ایجاد ساختار استاندارد پروژه‌ی اندروید
       - name: Create Android project structure
         shell: bash
         run: |
@@ -126,7 +118,7 @@ jobs:
             index.html \
             app/src/main/assets/index.html
 
-          echo "Copying Android styles..."
+          echo "Copying styles..."
 
           cp \
             styles.xml \
@@ -156,25 +148,24 @@ jobs:
 
           echo "Android project structure created."
 
-      # اصلاح دو فایل Gradle جابه‌جا‌شده
       - name: Fix Gradle build files
         shell: bash
         run: |
           set -e
 
-          echo "Saving current app Gradle configuration..."
+          echo "Saving app Gradle file..."
 
           cp \
             build.gradle \
             /tmp/app-build.gradle
 
-          echo "Restoring root Gradle configuration..."
+          echo "Restoring root Gradle file..."
 
           cp \
             "build (5).gradle" \
             build.gradle
 
-          echo "Restoring app Gradle configuration..."
+          echo "Restoring app Gradle file..."
 
           cp \
             /tmp/app-build.gradle \
@@ -190,7 +181,6 @@ jobs:
           echo "================================"
           cat app/build.gradle
 
-      # بررسی فایل‌های لازم
       - name: Verify Android project files
         shell: bash
         run: |
@@ -231,11 +221,11 @@ jobs:
 
           echo ""
           echo "Android project files:"
+
           find app/src/main \
             -type f \
             | sort
 
-      # نمایش نسخه‌های ابزارهای ساخت
       - name: Show build environment
         shell: bash
         run: |
@@ -250,7 +240,6 @@ jobs:
           echo "Android SDK location:"
           echo "$ANDROID_HOME"
 
-      # ساخت فایل APK
       - name: Build debug APK
         shell: bash
         run: |
@@ -261,7 +250,6 @@ jobs:
             --stacktrace \
             assembleDebug
 
-      # بررسی ساخته‌شدن APK
       - name: Verify generated APK
         shell: bash
         run: |
@@ -273,6 +261,7 @@ jobs:
             echo "ERROR: APK was not generated."
 
             echo "Available build files:"
+
             find app/build \
               -type f \
               2>/dev/null \
@@ -286,7 +275,6 @@ jobs:
 
           ls -lh "$APK_PATH"
 
-      # تغییر نام APK
       - name: Rename APK
         shell: bash
         run: |
@@ -296,9 +284,10 @@ jobs:
             app/build/outputs/apk/debug/app-debug.apk \
             RokhFit-v1.0.apk
 
+          echo "Final APK:"
+
           ls -lh RokhFit-v1.0.apk
 
-      # آپلود APK در بخش Artifacts
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
