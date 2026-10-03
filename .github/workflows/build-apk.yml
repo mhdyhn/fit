@@ -2,6 +2,7 @@ name: Build Rokh Fit APK
 
 on:
   workflow_dispatch:
+
   push:
     branches:
       - main
@@ -11,27 +12,50 @@ permissions:
 
 jobs:
   build:
+    name: Build installable Android APK
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
 
     steps:
-      - name: Download repository
+      # دریافت فایل‌های Repository
+      - name: Checkout repository
         uses: actions/checkout@v4
 
+      # نصب Java موردنیاز Android Gradle Plugin
       - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
 
+      # نصب ابزارهای اندروید
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      # نصب Android API 35 و Build Tools
+      - name: Install Android SDK packages
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses > /dev/null || true
+          sdkmanager \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0"
+
+      # نصب Gradle
       - name: Set up Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
 
-      - name: Rebuild Android project structure
+      # ساخت ساختار استاندارد پروژه از فایل‌های موجود
+      - name: Create Android project structure
         shell: bash
         run: |
+          set -e
+
+          echo "Creating Android project directories..."
+
           mkdir -p app/src/main/java/app/rokh/fitness
           mkdir -p app/src/main/assets
           mkdir -p app/src/main/res/values
@@ -41,29 +65,121 @@ jobs:
           mkdir -p app/src/main/res/mipmap-xxhdpi
           mkdir -p app/src/main/res/mipmap-xxxhdpi
 
-          cp AndroidManifest.xml app/src/main/AndroidManifest.xml
-          cp MainActivity.java app/src/main/java/app/rokh/fitness/MainActivity.java
-          cp index.html app/src/main/assets/index.html
-          cp styles.xml app/src/main/res/values/styles.xml
+          echo "Copying application files..."
 
-          cp "build (5).gradle" app/build.gradle
+          cp AndroidManifest.xml \
+            app/src/main/AndroidManifest.xml
 
-          cp ic_launcher.png app/src/main/res/mipmap-mdpi/ic_launcher.png
-          cp ic_launcher.png app/src/main/res/mipmap-hdpi/ic_launcher.png
-          cp ic_launcher.png app/src/main/res/mipmap-xhdpi/ic_launcher.png
-          cp ic_launcher.png app/src/main/res/mipmap-xxhdpi/ic_launcher.png
-          cp ic_launcher.png app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+          cp MainActivity.java \
+            app/src/main/java/app/rokh/fitness/MainActivity.java
 
-          echo "Android project structure created."
-          find app -maxdepth 8 -type f
+          cp index.html \
+            app/src/main/assets/index.html
 
-      - name: Build APK
-        run: gradle --no-daemon assembleDebug
+          cp styles.xml \
+            app/src/main/res/values/styles.xml
 
+          echo "Copying launcher icons..."
+
+          cp ic_launcher.png \
+            app/src/main/res/mipmap-mdpi/ic_launcher.png
+
+          cp ic_launcher.png \
+            app/src/main/res/mipmap-hdpi/ic_launcher.png
+
+          cp ic_launcher.png \
+            app/src/main/res/mipmap-xhdpi/ic_launcher.png
+
+          cp ic_launcher.png \
+            app/src/main/res/mipmap-xxhdpi/ic_launcher.png
+
+          cp ic_launcher.png \
+            app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+
+      # اصلاح دو فایل Gradle که هنگام آپلود جابه‌جا شده‌اند
+      - name: Fix Gradle build files
+        shell: bash
+        run: |
+          set -e
+
+          echo "Saving app Gradle file..."
+
+          cp build.gradle /tmp/app-build.gradle
+
+          echo "Restoring root Gradle file..."
+
+          cp "build (5).gradle" build.gradle
+
+          echo "Restoring app Gradle file..."
+
+          cp /tmp/app-build.gradle app/build.gradle
+
+          echo "Root build.gradle:"
+          echo "----------------------------"
+          cat build.gradle
+
+          echo ""
+          echo "App build.gradle:"
+          echo "----------------------------"
+          cat app/build.gradle
+
+      # نمایش ساختار پروژه برای عیب‌یابی
+      - name: Verify Android project
+        shell: bash
+        run: |
+          set -e
+
+          echo "Project files:"
+          find app/src/main -type f | sort
+
+          echo ""
+          echo "Checking required files..."
+
+          test -f app/build.gradle
+          test -f app/src/main/AndroidManifest.xml
+          test -f app/src/main/assets/index.html
+          test -f app/src/main/java/app/rokh/fitness/MainActivity.java
+          test -f app/src/main/res/values/styles.xml
+          test -f app/src/main/res/mipmap-mdpi/ic_launcher.png
+
+          echo ""
+          echo "All required files exist."
+
+      # ساخت APK قابل نصب
+      - name: Build debug APK
+        shell: bash
+        run: |
+          gradle \
+            --no-daemon \
+            --stacktrace \
+            assembleDebug
+
+      # بررسی وجود APK
+      - name: Verify generated APK
+        shell: bash
+        run: |
+          set -e
+
+          APK_PATH="app/build/outputs/apk/debug/app-debug.apk"
+
+          if [ ! -f "$APK_PATH" ]; then
+            echo "APK file was not generated."
+            exit 1
+          fi
+
+          echo "APK generated successfully:"
+          ls -lh "$APK_PATH"
+
+      # تغییر نام فایل نهایی
       - name: Rename APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk RokhFit-v1.0.apk
+        shell: bash
+        run: |
+          cp \
+            app/build/outputs/apk/debug/app-debug.apk \
+            RokhFit-v1.0.apk
 
-      - name: Upload APK
+      # قرار دادن APK در بخش Artifacts
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: RokhFit-APK
