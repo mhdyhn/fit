@@ -17,45 +17,87 @@ jobs:
     timeout-minutes: 30
 
     steps:
+      # دریافت فایل‌های Repository
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # نصب Java موردنیاز Android Gradle Plugin
       - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
 
-      - name: Show Android SDK information
+      # پیدا کردن sdkmanager با مسیر کامل و نصب ابزارهای لازم
+      - name: Configure Android SDK
         shell: bash
         run: |
+          set -e
+
           echo "ANDROID_HOME=$ANDROID_HOME"
           echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
-          which sdkmanager || true
-          sdkmanager --version
 
-      - name: Accept Android SDK licenses
-        shell: bash
-        run: |
-          yes | sdkmanager --licenses > /dev/null || true
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
 
-      - name: Install required Android SDK packages
-        shell: bash
-        run: |
-          sdkmanager \
+          if [ ! -x "$SDKMANAGER" ]; then
+            echo "sdkmanager was not found in the default location."
+            echo "Searching inside Android SDK..."
+
+            SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" \
+              -type f \
+              -name sdkmanager \
+              2>/dev/null \
+              | sort \
+              | tail -n 1)"
+          fi
+
+          if [ -z "$SDKMANAGER" ] || [ ! -f "$SDKMANAGER" ]; then
+            echo "ERROR: sdkmanager could not be found."
+
+            echo "Available sdkmanager files:"
+            find "$ANDROID_HOME" \
+              -maxdepth 6 \
+              -type f \
+              -name sdkmanager \
+              2>/dev/null \
+              || true
+
+            exit 1
+          fi
+
+          chmod +x "$SDKMANAGER"
+
+          echo "Using sdkmanager:"
+          echo "$SDKMANAGER"
+
+          echo "sdkmanager version:"
+          "$SDKMANAGER" --version
+
+          echo "Accepting Android SDK licenses..."
+          yes | "$SDKMANAGER" --licenses > /dev/null || true
+
+          echo "Installing required Android SDK packages..."
+          "$SDKMANAGER" \
             "platform-tools" \
             "platforms;android-35" \
             "build-tools;35.0.0"
 
+          echo "Installed Android SDK packages:"
+          "$SDKMANAGER" --list_installed
+
+      # نصب Gradle
       - name: Set up Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
 
+      # ایجاد ساختار استاندارد پروژه‌ی اندروید
       - name: Create Android project structure
         shell: bash
         run: |
           set -e
+
+          echo "Creating Android directories..."
 
           mkdir -p app/src/main/java/app/rokh/fitness
           mkdir -p app/src/main/assets
@@ -66,76 +108,160 @@ jobs:
           mkdir -p app/src/main/res/mipmap-xxhdpi
           mkdir -p app/src/main/res/mipmap-xxxhdpi
 
-          cp AndroidManifest.xml \
+          echo "Copying AndroidManifest.xml..."
+
+          cp \
+            AndroidManifest.xml \
             app/src/main/AndroidManifest.xml
 
-          cp MainActivity.java \
+          echo "Copying MainActivity.java..."
+
+          cp \
+            MainActivity.java \
             app/src/main/java/app/rokh/fitness/MainActivity.java
 
-          cp index.html \
+          echo "Copying offline application..."
+
+          cp \
+            index.html \
             app/src/main/assets/index.html
 
-          cp styles.xml \
+          echo "Copying Android styles..."
+
+          cp \
+            styles.xml \
             app/src/main/res/values/styles.xml
 
-          cp ic_launcher.png \
+          echo "Copying launcher icons..."
+
+          cp \
+            ic_launcher.png \
             app/src/main/res/mipmap-mdpi/ic_launcher.png
 
-          cp ic_launcher.png \
+          cp \
+            ic_launcher.png \
             app/src/main/res/mipmap-hdpi/ic_launcher.png
 
-          cp ic_launcher.png \
+          cp \
+            ic_launcher.png \
             app/src/main/res/mipmap-xhdpi/ic_launcher.png
 
-          cp ic_launcher.png \
+          cp \
+            ic_launcher.png \
             app/src/main/res/mipmap-xxhdpi/ic_launcher.png
 
-          cp ic_launcher.png \
+          cp \
+            ic_launcher.png \
             app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
 
+          echo "Android project structure created."
+
+      # اصلاح دو فایل Gradle جابه‌جا‌شده
       - name: Fix Gradle build files
         shell: bash
         run: |
           set -e
 
-          cp build.gradle /tmp/app-build.gradle
-          cp "build (5).gradle" build.gradle
-          cp /tmp/app-build.gradle app/build.gradle
+          echo "Saving current app Gradle configuration..."
 
+          cp \
+            build.gradle \
+            /tmp/app-build.gradle
+
+          echo "Restoring root Gradle configuration..."
+
+          cp \
+            "build (5).gradle" \
+            build.gradle
+
+          echo "Restoring app Gradle configuration..."
+
+          cp \
+            /tmp/app-build.gradle \
+            app/build.gradle
+
+          echo ""
           echo "Root build.gradle:"
+          echo "================================"
           cat build.gradle
 
           echo ""
           echo "App build.gradle:"
+          echo "================================"
           cat app/build.gradle
 
-      - name: Verify Android project
+      # بررسی فایل‌های لازم
+      - name: Verify Android project files
         shell: bash
         run: |
           set -e
+
+          echo "Checking required files..."
 
           test -f settings.gradle
           test -f gradle.properties
           test -f build.gradle
           test -f app/build.gradle
+
           test -f app/src/main/AndroidManifest.xml
           test -f app/src/main/assets/index.html
-          test -f app/src/main/java/app/rokh/fitness/MainActivity.java
-          test -f app/src/main/res/values/styles.xml
-          test -f app/src/main/res/mipmap-mdpi/ic_launcher.png
 
-          echo "Android project structure is valid."
+          test -f \
+            app/src/main/java/app/rokh/fitness/MainActivity.java
 
-          find app/src/main -type f | sort
+          test -f \
+            app/src/main/res/values/styles.xml
 
+          test -f \
+            app/src/main/res/mipmap-mdpi/ic_launcher.png
+
+          test -f \
+            app/src/main/res/mipmap-hdpi/ic_launcher.png
+
+          test -f \
+            app/src/main/res/mipmap-xhdpi/ic_launcher.png
+
+          test -f \
+            app/src/main/res/mipmap-xxhdpi/ic_launcher.png
+
+          test -f \
+            app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+
+          echo "All required files exist."
+
+          echo ""
+          echo "Android project files:"
+          find app/src/main \
+            -type f \
+            | sort
+
+      # نمایش نسخه‌های ابزارهای ساخت
+      - name: Show build environment
+        shell: bash
+        run: |
+          echo "Java version:"
+          java -version
+
+          echo ""
+          echo "Gradle version:"
+          gradle --version
+
+          echo ""
+          echo "Android SDK location:"
+          echo "$ANDROID_HOME"
+
+      # ساخت فایل APK
       - name: Build debug APK
         shell: bash
         run: |
+          set -e
+
           gradle \
             --no-daemon \
             --stacktrace \
             assembleDebug
 
+      # بررسی ساخته‌شدن APK
       - name: Verify generated APK
         shell: bash
         run: |
@@ -144,19 +270,35 @@ jobs:
           APK_PATH="app/build/outputs/apk/debug/app-debug.apk"
 
           if [ ! -f "$APK_PATH" ]; then
-            echo "APK was not generated."
+            echo "ERROR: APK was not generated."
+
+            echo "Available build files:"
+            find app/build \
+              -type f \
+              2>/dev/null \
+              | sort \
+              || true
+
             exit 1
           fi
 
+          echo "APK generated successfully:"
+
           ls -lh "$APK_PATH"
 
+      # تغییر نام APK
       - name: Rename APK
         shell: bash
         run: |
+          set -e
+
           cp \
             app/build/outputs/apk/debug/app-debug.apk \
             RokhFit-v1.0.apk
 
+          ls -lh RokhFit-v1.0.apk
+
+      # آپلود APK در بخش Artifacts
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
